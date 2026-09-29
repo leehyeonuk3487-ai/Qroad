@@ -1,7 +1,12 @@
 import type { CanonicalVisit, PlanResponse, TripSettings } from '../types';
 
+// Empty by default: local dev serves the frontend and backend from one origin (Vite's
+// dev proxy makes '/api/plan' reach the backend). A production build has no such proxy,
+// so a deployed frontend needs the backend's real URL here, e.g. https://qroad-api.onrender.com.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+
 export async function requestPlan(visits: CanonicalVisit[], settings: TripSettings): Promise<PlanResponse> {
-  const response = await fetch('/api/plan', {
+  const response = await fetch(`${API_BASE_URL}/api/plan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ visits, settings }),
