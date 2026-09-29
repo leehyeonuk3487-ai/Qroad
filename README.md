@@ -26,6 +26,83 @@ npm run dev
 
 Open `http://127.0.0.1:5173`.
 
+## Deploying (Render + Vercel)
+
+The backend and frontend are deployed as two separate services with two separate origins,
+which is why two things need to line up: the frontend must know the backend's URL, and the
+backend must allow requests from the frontend's URL.
+
+### 1. Kakao Developers console (once, before deploying)
+
+1. Create an app at [developers.kakao.com](https://developers.kakao.com) → **내 애플리케이션** → **애플리케이션 추가하기**.
+2. Open the app → **앱 키**. Two keys are used here:
+   - **REST API 키** → backend's `KAKAO_REST_API_KEY`. This is what calls Kakao Local
+     (address search, used by both the pasted 주소 변환 / 장소 검색 endpoints) and Kakao
+     Mobility (도로 길찾기). It is never sent to the browser.
+   - **JavaScript 키** → frontend's `VITE_KAKAO_MAP_KEY`. This is what loads the Maps SDK
+     shown in the second pasted table. The code loads it dynamically
+     (`dapi.kakao.com/v2/maps/sdk.js?appkey=...`), so the SDK version number on that page
+     needs no action — it always resolves to the current release.
+3. Open **플랫폼** → **Web 플랫폼 등록**, and add every origin the app will be opened from:
+   `http://localhost:5173`, `http://127.0.0.1:5173`, and the Vercel URL once it exists
+   (e.g. `https://qroad.vercel.app`, plus a custom domain if one is added later). This
+   restriction applies to the JavaScript key; an unregistered domain gets a blank map.
+4. Kakao Mobility (길찾기) runs on the same REST API key — no separate account or
+   business registration is required beyond the app itself. If the app's product list
+   does not show 카카오내비/모빌리티 as enabled, enable it there.
+5. The REST API key page also has an optional **허용 IP** (allowed IP) restriction.
+   Leave it unset unless Render's outbound IP is fixed for the plan in use; otherwise
+   the backend's own calls will be blocked.
+
+### 2. Render (backend)
+
+Create a Web Service from this repo with:
+
+- **Root directory:** `backend`
+- **Build command:** `pip install -e .`
+- **Start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- **Environment variables:**
+  - `KAKAO_REST_API_KEY` = the REST API key from step 1
+  - `QROAD_CORS_ORIGINS` = the Vercel URL(s), comma-separated, once known — see
+    **CORS**, below
+
+### 3. Vercel (frontend)
+
+Import this repo with:
+
+- **Root directory:** `frontend`
+- **Build command:** `npm run build` (default)
+- **Output directory:** `dist` (default)
+- **Environment variables:**
+  - `VITE_KAKAO_MAP_KEY` = the JavaScript key from step 1
+  - `VITE_API_BASE_URL` = the Render service's URL, no trailing slash, e.g.
+    `https://qroad-api.onrender.com`
+
+### 4. Close the loop
+
+Render and Vercel each hand out a URL only after the first deploy, so this is a two-pass
+setup: deploy both once with the Kakao keys only, note the two resulting URLs, then set
+`VITE_API_BASE_URL` on Vercel to Render's URL and `QROAD_CORS_ORIGINS` on Render to
+Vercel's URL, and redeploy each so the new values take effect.
+
+### What these settings actually do
+
+- **환경변수 (environment variables):** values the app reads at startup — keys, URLs —
+  kept out of the source code so they can differ between a laptop and a live deployment,
+  and so a secret key is never something anyone reading the code can see. Render and
+  Vercel each have an **Environment Variables** page in their dashboard; a value entered
+  there becomes exactly what `KAKAO_REST_API_KEY`/`VITE_KAKAO_MAP_KEY`/etc. read at
+  runtime, and `backend/.env` / `frontend/.env` are only the local-machine equivalent
+  (never committed — see `.gitignore`).
+- **CORS (Cross-Origin Resource Sharing):** a browser rule that blocks a page on one
+  domain from calling an API on another domain unless that API explicitly allows it.
+  Once split across Render and Vercel, `qroad.vercel.app` calling `qroad-api.onrender.com`
+  is exactly that cross-domain case. `QROAD_CORS_ORIGINS` on the backend is the allow
+  list ([app/config.py](backend/app/config.py), read by
+  [app/main.py](backend/app/main.py)); leaving it as the local-only default after
+  deploying means every request from the deployed frontend is silently rejected by the
+  browser with a CORS error, not a visible server error.
+
 ## Tests
 
 ```powershell
